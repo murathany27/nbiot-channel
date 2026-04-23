@@ -7,9 +7,6 @@ from datetime import timedelta
 import random
 
 
-
-
-
 # ==========================================
 # 0. GERÇEK UYDU KANALI FONKSİYONU VE HESAPLAMALARI
 # ==========================================
@@ -41,9 +38,19 @@ def get_real_satellite_params():
     carrier_freq_mhz = 2000
     real_doppler = (v_rel / 299792.458) * (carrier_freq_mhz * 1e6)
     
+    
     fspl = 32.44 + 20*np.log10(dist_km) + 20*np.log10(carrier_freq_mhz)
     atm_loss = 0.5 / np.sin(np.radians(elev_deg))
     noise_floor = -174.0 + 10*np.log10(180000) 
+
+    print(f"Gerçek Doppler: {real_doppler}")
+    print(f"Elevation: {elev_deg}")
+    print(f"Distance: {dist_km}")
+    print(f"Relative Velocity: {v_rel}")
+    print(f"Carrier Frequency: {carrier_freq_mhz}")
+    print(f"FSPL: {fspl}")
+    print(f"ATM Loss: {atm_loss}")
+    print(f"Noise Floor: {noise_floor}")
     
     sat_rx_gain_dbi = 30.0 
     ue_tx_gain_dbi = 0.0 
