@@ -17,7 +17,7 @@ t_now = ts.now()
 
 # User selection (set at the top of the script)
 # pass_number: 0 = first upcoming pass, 1 = second, 2 = third, ...
-selected_pass_number = 1
+selected_pass_number = 2
 # event_name options: "rise", "culmination", "set"
 selected_event_name = "rise"
 # Duration used when a natural end event is not available
@@ -28,11 +28,51 @@ coverage_radius_km = 700
 direction_arrow_count = 6
 
 # TLE values
-tle_line1 = '1 52755U 22057AH  24128.50000000  .00000000  00000-0  00000-0 0  9997'
-tle_line2 = '2 52755  97.5000 150.0000 0010000   0.0000 360.0000 15.00000000100000'
+#tle_line1 = '1 52755U 22057AH  24128.50000000  .00000000  00000-0  00000-0 0  9997'
+#tle_line2 = '2 52755  97.5000 150.0000 0010000   0.0000 360.0000 15.00000000100000'
+
+# TLE Geçmişi Sözlüğü (Senin Space-Track verilerinden oluşturuldu)
+tle_history = {
+    # Güncel TLE (Referans - Epoch: 26126.46)
+    0: (
+        '1 67402U 26004AR  26126.46622164  .00004887  00000-0  24725-3 0  9999',
+        '2 67402  97.4570 125.9534 0005270 108.4170 251.7637 15.17480027 17405'
+    ),
+    # ~3 Gün Eski TLE (Epoch: 26123.23)
+    3: (
+        '1 67402U 26004AR  26123.23509458  .00015303  00000-0  76672-3 0  9994',
+        '2 67402  97.4562 122.7718 0005143 114.8739 245.3030 15.17447493 16917'
+    ),
+    # ~7 Gün Eski TLE (Epoch: 26119.54)
+    7: (
+        '1 67402U 26004AR  26119.54219208  .00004118  00000-0  20982-3 0  9999',
+        '2 67402  97.4579 119.1366 0005429 121.2841 238.8925 15.17318186 16351'
+    ),
+    # ~14 Gün Eski TLE (Epoch: 26112.74)
+    14: (
+        '1 67402U 26004AR  26112.74917184  .00002625  00000-0  13574-3 0  9992',
+        '2 67402  97.4553 112.4447 0005485 136.0188 224.1483 15.17123106 15328'
+    )
+}
+
+# Uydu nesnelerini oluştur
+satellites = {}
+for age, (l1, l2) in tle_history.items():
+    satellites[age] = EarthSatellite(l1, l2, f'SAT_AGE_{age}', ts)
+
+# Eski Hali: doppler_errors = {3: [], 7: [], 14: []}
+# Yeni Hali:
+doppler_errors = {0: [], 3: [], 7: [], 14: []}
+
+# Mevcut saniye döngünün (for s in range(total_seconds):) içine eklenecek kısım:
+# --------------------------------------------------------------------------------
+    
+# --------------------------------------------------------------------------------
 
 # satellite and ground station setup
-satellite = EarthSatellite(tle_line1, tle_line2, 'CONNECTA', ts)
+#satellite = EarthSatellite(tle_line1, tle_line2, 'CONNECTA', ts)
+satellite = satellites[0]
+
 station_lat = 39.9208
 station_lon = 32.8541
 ground_station = wgs84.latlon(station_lat, station_lon)
@@ -148,7 +188,7 @@ print(f"[INFO] Simulation step count (1-second resolution): {total_seconds}")
 
 for s in range(total_seconds):
     current_t = ts.from_datetime(t_start.utc_datetime() + timedelta(seconds=s))
-
+    diff_ref = satellites[0] - ground_station
     # 1. Geometry: Elevation, Azimuth, Distance
     diff = satellite - ground_station
     alt, az, dist = diff.at(current_t).altaz()
@@ -195,6 +235,19 @@ for s in range(total_seconds):
     # Received Power (dBm) = TxPower(dBm) + TxGain(dBi) + RxGain(dBi) - TotalPathLoss(dB)
     rx_power = tx_power_dbm + tx_gain_dbi + rx_gain_dbi - total_loss
     link_budget_list.append(rx_power)
+
+    # Eski Hali: for age in [3, 7, 14]:
+    # Yeni Hali:
+    for age in [0, 3, 7, 14]:
+        diff_old = satellites[age] - ground_station
+        d_old_km = diff_old.at(current_t).distance().km
+        d_old_next = diff_old.at(t_next).distance().km
+        
+        v_rel_old = d_old_km - d_old_next
+        doppler_old_hz = (v_rel_old / c_km_s) * carrier_freq_hz
+        
+        # HATA: Gerçek (doppler_hz) - Eski/Test TLE (doppler_old_hz)
+        doppler_errors[age].append(doppler_hz - doppler_old_hz)
 
 print("\n[INFO] Computation finished.")
 if len(time_minutes_list) == 0:
@@ -429,5 +482,47 @@ ax6.annotate(
 )
 #ax6.legend(loc='upper right')
 
+# -- 7. Graph: Doppler Kestirim Hatası (Error) vs Zaman --
+ax7 = fig.add_subplot(gs[3, 0])
+
+# YENİ EKLENEN SATIR: 0. Gün (Referans) çizgisi
+ax7.plot(time_arr, doppler_errors[0], label='0 Gün (Referans / İdeal)', color='green', linewidth=3)
+
+# Diğerleri aynı kalıyor
+ax7.plot(time_arr, doppler_errors[3], label='3 Gün Eski TLE', color='orange', linewidth=2)
+ax7.plot(time_arr, doppler_errors[7], label='7 Gün Eski TLE', color='red', linewidth=2)
+ax7.plot(time_arr, doppler_errors[14], label='14 Gün Eski TLE', color='darkred', linestyle='--', linewidth=2)
+
+ax7.set_title('7. Eski TLE Kestirim Hatası (Doppler Error)')
+ax7.set_xlabel('Time (Minutes)')
+ax7.set_ylabel('Frekans Sapması (Hz)')
+ax7.axhline(0, color='black', linestyle='-', linewidth=1) # Sıfır çizgisi
+ax7.grid(True, linestyle='--', alpha=0.7)
+ax7.legend(loc='upper right')
+
+# -- 8. Graph: TLE Yaşına Göre Maksimum ve RMS Hata Karakteristiği --
+ax8 = fig.add_subplot(gs[3, 1])
+
+# YENİ Hali: ages listesine 0'ı ekledik
+ages = [0, 3, 7, 14]
+
+max_errs = [np.max(np.abs(doppler_errors[a])) for a in ages]
+rms_errs = [np.sqrt(np.mean(np.array(doppler_errors[a])**2)) for a in ages]
+
+x_pos = np.arange(len(ages))
+width = 0.35
+
+ax8.bar(x_pos - width/2, max_errs, width, label='Maksimum Hata (|Hz|)', color='salmon')
+ax8.bar(x_pos + width/2, rms_errs, width, label='RMS Hata (Hz)', color='lightblue')
+
+ax8.set_xticks(x_pos)
+# Etiketleri de dinamik yapalım
+ax8.set_xticklabels([f'{a} Günlük' if a > 0 else 'Bugün (Ref)' for a in ages])
+ax8.set_title('8. TLE Yaşlanmasının Frekans Senkronizasyonuna Etkisi')
+ax8.set_ylabel('Frekans Hata Büyüklüğü (Hz)')
+ax8.grid(True, axis='y', linestyle='--', alpha=0.7)
+ax8.legend(loc='upper left')
+
+# EN SONA BUNLAR GELMELİ:
 plt.tight_layout(pad=2.0, h_pad=2.0, w_pad=2.0)
 plt.show()
